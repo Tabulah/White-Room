@@ -1,0 +1,31 @@
+[package]
+name = "white-room"
+version = "0.1.0"
+description = "A local-first learning and focus environment for macOS"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+
+[lib]
+# Separate library name avoids a name clash with the binary on some platforms.
+name = "white_room_lib"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-log = "2"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# Bundled SQLite gives a known, modern SQLite version (STRICT tables etc.)
+# independent of the version shipped with macOS.
+rusqlite = { version = "0.41", features = ["bundled"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

@@ -1,0 +1,15 @@
+@import 'tailwindcss';
+
+/*
+ * Phase 0 keeps styling to Tailwind's neutral palette.
+ * The monochromatic design tokens are defined in Phase 1 (see ROADMAP.md).
+ */
+
+html,
+body {
+  @apply h-full bg-neutral-50 text-neutral-900 antialiased;
+}
+
+#app {
+  @apply h-full;
+}

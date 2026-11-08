@@ -12,7 +12,7 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 | `[~]` | In progress |
 | `[x]` | Implemented and verified |
 
-**Current state:** The repository contains documentation only (`AGENTS.md`, `PROJECT-BRIEF.md`, this roadmap). No application code exists yet. Every item below is planned.
+**Current state:** Phase 0 (project foundation) is in progress. The Tauri 2 / Svelte / Rust skeleton builds, opens a window, loads configuration, logs to a local file, and opens and migrates its SQLite database. There are no user-facing features yet. Phase 0 has so far been built and tested on Linux only; it still needs a check on macOS (see Phase 0 notes).
 
 ## Guiding Rules
 
@@ -29,16 +29,22 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 
 **Goal:** A buildable, testable Tauri 2 application skeleton with the agreed module layout.
 
-- [ ] Scaffold Tauri 2 app with Svelte, TypeScript, and Tailwind CSS.
-- [ ] Establish Rust module layout: `core`, `platform`, `workspace`, `sessions`, `learning`, `gamification`, `economy`, `database`.
-- [ ] Establish frontend layout separating UI components from API/command bindings.
-- [ ] Configure Tauri capabilities with a minimal, deny-by-default permission set.
-- [ ] Add SQLite with a versioned migration runner and an initial empty schema.
-- [ ] Add application configuration loading and validation (`core`).
-- [ ] Add structured logging to a local file (no telemetry).
-- [ ] Set up formatting, linting, and test commands for Rust and TypeScript.
-- [ ] Add continuous integration for build, lint, and test (macOS runner).
-- [ ] Document build and run instructions in a `README.md`.
+- [x] Scaffold Tauri 2 app with Svelte, TypeScript, and Tailwind CSS.
+- [x] Establish Rust module layout: `core`, `platform`, `workspace`, `sessions`, `learning`, `gamification`, `economy`, `database`.
+- [x] Establish frontend layout separating UI components from API/command bindings.
+- [x] Configure Tauri capabilities with a minimal, deny-by-default permission set.
+- [x] Add SQLite with a versioned migration runner and an initial empty schema.
+- [x] Add application configuration loading and validation (`core`).
+- [x] Add structured logging to a local file (no telemetry).
+- [x] Set up formatting, linting, and test commands for Rust and TypeScript.
+- [~] Add continuous integration for build, lint, and test (macOS runner). Workflow written; first run pending.
+- [x] Document build and run instructions in a `README.md`.
+
+**Notes:**
+
+- Verified on Linux: frontend format, type check, tests, and build; Rust fmt, clippy, and tests (19); the app launches, migrates a new database, writes its log file, and shows data fetched from Rust. Removing the capability grant makes the same call fail, which confirms commands are deny-by-default.
+- Not yet verified on macOS. The CI workflow's first run is the first macOS build.
+- The initial schema contains only migration bookkeeping and an `app_metadata` table that records when the database was created.
 
 **Exit criteria:** App builds and launches on macOS; migrations run on a fresh database; CI is green.
 
@@ -248,6 +254,7 @@ From `PROJECT-BRIEF.md`. These are not scheduled and will not be built without a
 
 ## Open Questions
 
+- Bundle identifier. Phase 0 uses the placeholder `com.whiteroom.desktop`. Changing it later moves the data directory, so it should be settled before any release.
 - Minimum supported macOS version.
 - Exact mechanism for the independent recovery tool (menu bar agent vs. separate helper binary).
 - Level curve formula and initial XP/FC award values.

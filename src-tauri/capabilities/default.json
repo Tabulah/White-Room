@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for the main window. Deny-by-default: grant each permission only when a feature needs it, and document why.",
+  "windows": ["main"],
+  "permissions": ["allow-get-app-info"]
+}
