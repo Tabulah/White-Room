@@ -12,7 +12,7 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 | `[~]` | In progress |
 | `[x]` | Implemented and verified |
 
-**Current state:** Phase 0 (project foundation) is in progress. The Tauri 2 / Svelte / Rust skeleton builds, opens a window, loads configuration, logs to a local file, and opens and migrates its SQLite database. There are no user-facing features yet. Phase 0 has so far been built and tested on Linux only; it still needs a check on macOS (see Phase 0 notes).
+**Current state:** Phase 0 (project foundation) is in progress. The Tauri 2 / Svelte / Rust skeleton builds, opens a window, loads configuration, logs to a local file, and opens and migrates its SQLite database. There are no user-facing features yet. All Phase 0 checks pass on macOS CI. The one remaining exit criterion is launching the app by hand on a Mac (see Phase 0 notes).
 
 ## Guiding Rules
 
@@ -37,13 +37,14 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 - [x] Add application configuration loading and validation (`core`).
 - [x] Add structured logging to a local file (no telemetry).
 - [x] Set up formatting, linting, and test commands for Rust and TypeScript.
-- [~] Add continuous integration for build, lint, and test (macOS runner). Workflow written; first run pending.
+- [x] Add continuous integration for build, lint, and test (macOS runner).
 - [x] Document build and run instructions in a `README.md`.
 
 **Notes:**
 
 - Verified on Linux: frontend format, type check, tests, and build; Rust fmt, clippy, and tests (19); the app launches, migrates a new database, writes its log file, and shows data fetched from Rust. Removing the capability grant makes the same call fail, which confirms commands are deny-by-default.
-- Not yet verified on macOS. The CI workflow's first run is the first macOS build.
+- Verified on macOS CI (Apple Silicon runner, first run green): frontend format, type check, and tests; Rust fmt, clippy, and tests (19 of 19); an unsigned debug `WHITE ROOM.app` bundle is built.
+- Still to check by hand on a Mac: CI builds the app but does not launch it. Launching it, checking that the database and log appear under `~/Library`, and confirming the window shows the version and schema closes the "launches on macOS" exit criterion.
 - The initial schema contains only migration bookkeeping and an `app_metadata` table that records when the database was created.
 
 **Exit criteria:** App builds and launches on macOS; migrations run on a fresh database; CI is green.
