@@ -12,7 +12,7 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 | `[~]` | In progress |
 | `[x]` | Implemented and verified |
 
-**Current state:** Phase 1 (macOS fullscreen workspace) is implemented and verified on a Mac by an automated smoke test: the app enters and leaves a fullscreen workspace repeatedly and restores its window exactly each time. Still open: the first CI runs that include the smoke test (macOS, and the new Windows compatibility workflow), which run once these changes are pushed, and a short check by hand and eye on a Mac (see Phase 1 notes). Phase 2 should not begin in earnest until those are done.
+**Current state:** Phase 1 (macOS fullscreen workspace) is implemented and verified on a Mac by an automated smoke test: the app enters and leaves a fullscreen workspace repeatedly and restores its window exactly each time. Still open: green CI runs with the smoke test on macOS and Windows (the first run found two problems, both now fixed; see Phase 1 notes), and a short check by hand and eye on a Mac. Phase 2 should not begin in earnest until those are done.
 
 ## Guiding Rules
 
@@ -65,7 +65,9 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 
 - Behaviour, exits, and display policy are documented in [`docs/workspace.md`](docs/workspace.md).
 - Verified on macOS (Apple Silicon, 2026-11-09): Rust fmt, clippy, and tests (57); frontend format, type check, and tests (42); production frontend build; debug `.app` bundle. The smoke test passed. It entered and left the workspace 3 times, alternating the exit-control and emergency-shortcut code paths, and the window returned to its exact original frame each time. The shortcut was registered. A deliberately broken run exits with code 1, so CI will notice failures.
-- Not yet run: the smoke test step in macOS CI, and the Windows compatibility workflow. Both run on the next push.
+- First CI run (commit `7b46a49`) failed on both platforms. Both causes are fixed:
+  - macOS: the smoke test failed on the runner's 1024-point-wide display. The 1200 × 800 window was centred partly off-screen, and macOS moved it back on screen after fullscreen, so its frame changed. The same failure was reproduced locally with an oversized window. Fixed with `preventOverflow`: the window is shrunk to fit the display at launch, and the oversized case then passes all three cycles.
+  - Windows: everything compiled and passed clippy. One Phase 0 test, `unreadable_path_is_an_error`, assumed every OS reports reading a directory the same way, and failed on Windows. It now uses a realistic path. Windows' build and smoke-test steps have not run yet.
 - Still to check by hand on a Mac:
   - look at the entry screen and the workspace;
   - press ⇧⌘⎋ for real (the smoke test calls the shortcut's handler function, not the keys);

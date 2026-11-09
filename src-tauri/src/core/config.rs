@@ -169,8 +169,23 @@ mod tests {
 
     #[test]
     fn unreadable_path_is_an_error() {
-        // A directory cannot be read as a file.
-        let err = load(&std::env::temp_dir()).unwrap_err();
+        // A directory where the config file should be cannot be read as a
+        // file. The path must not end in a separator, as the real config path
+        // never does: on Windows, `temp_dir()` ends in `\`, and opening that
+        // reports NotFound rather than a read error.
+        let dir = std::env::temp_dir().join(format!(
+            "white-room-config-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let path = dir.join(CONFIG_FILE_NAME);
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&path).unwrap();
+
+        let result = load(&path);
+        fs::remove_dir_all(&dir).unwrap();
+
+        let err = result.unwrap_err();
         assert!(matches!(err, ConfigError::Read { .. }), "{err}");
     }
 

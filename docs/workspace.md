@@ -4,7 +4,7 @@ How WHITE ROOM's fullscreen workspace is entered and left, what it changes on yo
 
 ## Entering
 
-WHITE ROOM opens in an ordinary window. **Enter workspace** makes that window fullscreen on the primary display (see [Displays](#displays)) and shows the dashboard. Before you go in, the window tells you how to get back out, including whether the emergency shortcut is working.
+WHITE ROOM opens in an ordinary window, centred and always fully on screen: on a display smaller than its default 1200 × 800, it is shrunk to fit. **Enter workspace** makes that window fullscreen on the primary display (see [Displays](#displays)) and shows the dashboard. Before you go in, the window tells you how to get back out, including whether the emergency shortcut is working.
 
 On macOS the workspace uses **native fullscreen**: the same mode as the green window button. macOS gives the window its own Space and hides the Dock and menu bar for it. Both reappear when you move the pointer to the bottom or top edge of the screen.
 
@@ -33,7 +33,7 @@ Registration can fail, for example when another app already uses the combination
 
 Nothing persistent. Fullscreen is managed by the operating system and ends with the window, even if WHITE ROOM crashes. WHITE ROOM does not change Dock, menu bar, notification, or display settings in this phase.
 
-After leaving, the window returns to the exact position and size it had before entering. The automated smoke test checks this after every exit (see the README).
+After leaving, the window returns to the exact position and size it had before entering. The automated smoke test checks this after every exit (see the README). This relies on the window starting fully on screen: macOS moves a window that hangs off the display edge back on screen when it leaves fullscreen.
 
 Phase 2 adds explicit control over the Dock and menu bar. Those changes do outlast a crash, so that phase also adds the snapshot, restore, and recovery mechanisms that make them safe.
 
