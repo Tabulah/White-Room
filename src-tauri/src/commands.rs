@@ -5,11 +5,12 @@
 //! `build.rs` and granted in `capabilities/` before the frontend can call it.
 
 use serde::Serialize;
-use tauri::{AppHandle, Runtime, State};
+use tauri::{AppHandle, Manager, Runtime, State};
 
 use crate::{
     core::error::CommandError,
     database::Database,
+    sessions::reminders::{NewReminder, ReminderError, ReminderState, Reminders},
     workspace::{self, ExitReason, Workspace, WorkspaceSnapshot},
 };
 
@@ -55,4 +56,50 @@ pub fn enter_workspace<R: Runtime>(app: AppHandle<R>) -> Result<WorkspaceSnapsho
 #[tauri::command]
 pub fn exit_workspace<R: Runtime>(app: AppHandle<R>) -> Result<WorkspaceSnapshot, CommandError> {
     Ok(workspace::exit(&app, ExitReason::ExitControl)?)
+}
+
+// Reminder commands talk to macOS and may wait for the user to answer the
+// notification permission prompt, so they run on a blocking thread.
+
+/// The stored reminders, after bringing macOS in line with them.
+#[tauri::command]
+pub async fn get_reminders<R: Runtime>(app: AppHandle<R>) -> Result<ReminderState, CommandError> {
+    with_reminders(app, |reminders, db| reminders.sync(db)).await
+}
+
+#[tauri::command]
+pub async fn set_reminders_enabled<R: Runtime>(
+    app: AppHandle<R>,
+    enabled: bool,
+) -> Result<ReminderState, CommandError> {
+    with_reminders(app, move |reminders, db| reminders.set_enabled(db, enabled)).await
+}
+
+/// `reminder` is validated in Rust; see `sessions::reminders`.
+#[tauri::command]
+pub async fn add_reminder<R: Runtime>(
+    app: AppHandle<R>,
+    reminder: NewReminder,
+) -> Result<ReminderState, CommandError> {
+    with_reminders(app, move |reminders, db| reminders.add(db, reminder)).await
+}
+
+#[tauri::command]
+pub async fn remove_reminder<R: Runtime>(
+    app: AppHandle<R>,
+    id: i64,
+) -> Result<ReminderState, CommandError> {
+    with_reminders(app, move |reminders, db| reminders.remove(db, id)).await
+}
+
+async fn with_reminders<R: Runtime, T: Send + 'static>(
+    app: AppHandle<R>,
+    f: impl FnOnce(&Reminders, &Database) -> Result<T, ReminderError> + Send + 'static,
+) -> Result<T, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        f(&app.state::<Reminders>(), &app.state::<Database>())
+    })
+    .await
+    .map_err(|err| CommandError::Interrupted(err.to_string()))?
+    .map_err(CommandError::from)
 }

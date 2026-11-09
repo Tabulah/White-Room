@@ -65,6 +65,10 @@ jobs:
           WHITE_ROOM_SMOKE_TEST: '1'
         run: '"src-tauri/target/debug/bundle/macos/WHITE ROOM.app/Contents/MacOS/white-room"'
 
+      - name: Crash test (kill the app inside the workspace; Dock and menu bar must come back)
+        timeout-minutes: 5
+        run: scripts/crash-test.sh
+
       - name: Collect app log
         if: failure()
         run: cp -R ~/Library/Logs/com.whiteroom.desktop app-log || true

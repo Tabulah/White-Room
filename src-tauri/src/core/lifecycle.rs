@@ -2,17 +2,19 @@
 
 use std::error::Error;
 
-use tauri::{App, Manager};
+use tauri::{App, AppHandle, Manager, Runtime};
 
 use super::{config, logging};
 use crate::{
     database::{Database, DATABASE_FILE_NAME},
+    sessions::reminders::{Delivery, Reminders},
     workspace,
 };
 
 /// Loads configuration, opens and migrates the database, registers the
-/// emergency-exit shortcut, and registers managed state. Runs once from the
-/// Tauri `setup` hook.
+/// emergency-exit shortcut, registers managed state, and brings scheduled
+/// study reminders in line with the database. Runs once from the Tauri
+/// `setup` hook.
 pub fn initialize(app: &mut App) -> Result<(), Box<dyn Error>> {
     let paths = app.path();
 
@@ -46,8 +48,30 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn Error>> {
     let workspace = workspace::init(app.handle());
     app.manage(workspace);
 
+    app.manage(Reminders::native());
+    sync_reminders_in_background(app.handle());
+
     #[cfg(debug_assertions)]
     super::smoke_test::start_if_requested(app.handle());
 
     Ok(())
+}
+
+/// Repairs any drift between the stored reminders and what macOS has
+/// scheduled (for example after the app was reinstalled). Asks for permission
+/// only if reminders are switched on and the user has never answered.
+fn sync_reminders_in_background<R: Runtime>(app: &AppHandle<R>) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        match app.state::<Reminders>().sync(&app.state::<Database>()) {
+            Ok(state) => match state.delivery {
+                Delivery::Off => log::debug!("study reminders are off"),
+                delivery => log::info!(
+                    "study reminders: {} stored, delivery {delivery:?}",
+                    state.reminders.len()
+                ),
+            },
+            Err(err) => log::warn!("could not sync study reminders: {err}"),
+        }
+    });
 }

@@ -20,7 +20,9 @@ const available: WorkspaceSnapshot = {
 function html(snapshot: WorkspaceSnapshot | null, error: string | null = null) {
   // A pending promise: the version footer is not under test here.
   const appInfo = new Promise<AppInfo>(() => {});
-  return render(EntryView, { props: { snapshot, appInfo, error, onenter: () => {} } }).body;
+  return render(EntryView, {
+    props: { snapshot, appInfo, error, onenter: () => {}, onreminders: () => {} },
+  }).body;
 }
 
 /** Text content of the emergency-exit description, whitespace-collapsed. */
@@ -66,5 +68,23 @@ describe('EntryView', () => {
     expect(html(available, 'Could not enter the workspace: boom')).toMatch(
       /role="alert"[^>]*>Could not enter the workspace: boom</,
     );
+  });
+});
+
+describe('EntryView reminders', () => {
+  it('links to the study reminders screen', () => {
+    const appInfo = new Promise<AppInfo>(() => {});
+    const body = render(EntryView, {
+      props: { snapshot: null, appInfo, error: null, onenter: () => {}, onreminders: () => {} },
+    }).body;
+    expect(body).toMatch(/<button[^>]*data-open-reminders[^>]*>\s*Study reminders…\s*<\/button>/);
+  });
+
+  it('says the Dock and menu bar are hidden in the workspace', () => {
+    const appInfo = new Promise<AppInfo>(() => {});
+    const body = render(EntryView, {
+      props: { snapshot: null, appInfo, error: null, onenter: () => {}, onreminders: () => {} },
+    }).body;
+    expect(body).toContain('The Dock and menu bar stay hidden until you leave.');
   });
 });

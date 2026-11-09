@@ -10,7 +10,7 @@
 //! | [`core`]         | Lifecycle, configuration, logging, shared errors          |
 //! | [`platform`]     | macOS-specific integration                                |
 //! | [`workspace`]    | Fullscreen workspace, its exits, and (later) the launcher |
-//! | [`sessions`]     | Focus sessions and their lifecycle                        |
+//! | [`sessions`]     | Focus sessions and their lifecycle; study reminders       |
 //! | [`learning`]     | Curricula, courses, lessons, assessments, mastery         |
 //! | [`gamification`] | XP, levels, achievements, skill trees                     |
 //! | [`economy`]      | Focus Credits, transactions, inventory, cosmetics         |
@@ -41,6 +41,10 @@ pub fn run() {
             commands::get_workspace_state,
             commands::enter_workspace,
             commands::exit_workspace,
+            commands::get_reminders,
+            commands::set_reminders_enabled,
+            commands::add_reminder,
+            commands::remove_reminder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running WHITE ROOM");

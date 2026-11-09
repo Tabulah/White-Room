@@ -10,6 +10,7 @@
     type WorkspaceSnapshot,
   } from './lib/api/workspace';
   import EntryView from './lib/components/EntryView.svelte';
+  import Reminders from './lib/components/Reminders.svelte';
   import WorkspaceView from './lib/components/WorkspaceView.svelte';
 
   const appInfo = getAppInfo();
@@ -18,6 +19,8 @@
   let snapshot = $state<WorkspaceSnapshot | null>(null);
   let entryError = $state<string | null>(null);
   let exitError = $state<string | null>(null);
+  /** Which screen to show outside the workspace (client-side UI state). */
+  let screen = $state<'entry' | 'reminders'>('entry');
 
   function apply(next: WorkspaceSnapshot) {
     snapshot = newerSnapshot(snapshot, next);
@@ -65,6 +68,14 @@
 
 {#if snapshot?.status === 'active'}
   <WorkspaceView {snapshot} {exitError} onexit={exit} />
+{:else if screen === 'reminders'}
+  <Reminders onback={() => (screen = 'entry')} />
 {:else}
-  <EntryView {snapshot} {appInfo} error={entryError} onenter={enter} />
+  <EntryView
+    {snapshot}
+    {appInfo}
+    error={entryError}
+    onenter={enter}
+    onreminders={() => (screen = 'reminders')}
+  />
 {/if}

@@ -1,10 +1,11 @@
 //! SQLite persistence.
 //!
 //! The database lives at `<app data dir>/white-room.sqlite3`. Business logic
-//! never touches SQL directly; domain modules will go through repository
-//! functions in this module as they are added.
+//! never touches SQL directly; domain modules go through the repository
+//! functions in this module's submodules.
 
 mod migrations;
+pub mod reminders;
 
 use std::{
     fs, io,

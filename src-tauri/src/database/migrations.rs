@@ -21,11 +21,18 @@ pub struct Migration {
 }
 
 /// All migrations known to this build, in order.
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "app_metadata",
-    sql: include_str!("migrations/0001_app_metadata.sql"),
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "app_metadata",
+        sql: include_str!("migrations/0001_app_metadata.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "study_reminders",
+        sql: include_str!("migrations/0002_study_reminders.sql"),
+    },
+];
 
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
@@ -166,6 +173,8 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         assert_eq!(migrate(&mut conn).unwrap(), LATEST_VERSION);
         assert!(table_exists(&conn, "app_metadata"));
+        assert!(table_exists(&conn, "study_reminder"));
+        assert!(table_exists(&conn, "study_reminder_settings"));
 
         let created_at: String = conn
             .query_row(

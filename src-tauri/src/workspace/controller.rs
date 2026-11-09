@@ -1,14 +1,25 @@
 //! Entering and leaving the workspace.
 //!
 //! [`Workspace`] is managed Tauri state. It applies window changes through
-//! [`WorkspaceWindow`] and records them in [`WorkspaceState`].
+//! [`WorkspaceWindow`], hides the Dock and the menu bar through [`SystemUi`]
+//! while the workspace is open, and records the result in [`WorkspaceState`].
+//!
+//! The Dock and menu bar follow the state in [`Workspace::sync_system_ui`]:
+//! hidden while the workspace is open and macOS has made the window
+//! fullscreen, shown otherwise. Leaving through WHITE ROOM shows them first,
+//! while still fullscreen; leaving through the system's own controls clears
+//! them once fullscreen has ended. Hiding them is never essential: if they
+//! cannot be changed, that is logged and entering or leaving carries on.
 //!
 //! Locking rule: the state lock is never held while calling the window. Window
 //! getters called off the main thread block until the main thread answers, and
 //! the main thread may itself be waiting for this lock (the emergency shortcut
 //! and window events run there), so holding both would deadlock.
 
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex, MutexGuard, PoisonError,
+};
 
 use serde::Serialize;
 
@@ -18,6 +29,7 @@ use super::{
     state::{ExitReason, Status, WorkspaceDisplay, WorkspaceState},
     window::WorkspaceWindow,
 };
+use crate::platform::presentation::SystemUi;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
@@ -56,6 +68,9 @@ pub struct Outcome {
 pub struct Workspace {
     state: Mutex<WorkspaceState>,
     emergency_exit: EmergencyExitInfo,
+    /// Whether WHITE ROOM has hidden the Dock and menu bar and not yet undone
+    /// that. Only changed on the main thread.
+    ui_hidden: AtomicBool,
 }
 
 impl Workspace {
@@ -63,6 +78,7 @@ impl Workspace {
         Self {
             state: Mutex::default(),
             emergency_exit,
+            ui_hidden: AtomicBool::new(false),
         }
     }
 
@@ -75,7 +91,15 @@ impl Workspace {
     /// Display placement is best effort: if it fails, the workspace opens on
     /// whichever display holds the window. Only a failure to go fullscreen is
     /// an error, and in that case the state is left unchanged.
-    pub fn enter(&self, window: &impl WorkspaceWindow) -> Result<Outcome, WorkspaceError> {
+    ///
+    /// The Dock and menu bar are hidden once macOS has put the window into
+    /// fullscreen, which usually happens later, in
+    /// [`sync_system_ui`](Self::sync_system_ui).
+    pub fn enter(
+        &self,
+        window: &impl WorkspaceWindow,
+        ui: &impl SystemUi,
+    ) -> Result<Outcome, WorkspaceError> {
         let display = place_on_primary_display(window);
         window
             .set_fullscreen(true)
@@ -88,12 +112,17 @@ impl Workspace {
             log::debug!("could not focus the workspace window: {err}");
         }
 
-        let mut state = self.lock();
-        let changed = state.enter(display, fullscreen_now);
-        if changed {
-            log::info!("entered workspace on {}", describe(state.display()));
-        }
-        Ok(self.outcome(&state, changed))
+        let outcome = {
+            let mut state = self.lock();
+            let changed = state.enter(display, fullscreen_now);
+            if changed {
+                log::info!("entered workspace on {}", describe(state.display()));
+            }
+            self.outcome(&state, changed)
+        };
+        // Takes effect now only if the window was already fullscreen.
+        self.sync_system_ui(ui);
+        Ok(outcome)
     }
 
     /// Takes the window out of fullscreen.
@@ -101,14 +130,20 @@ impl Workspace {
     /// The window is always asked to leave fullscreen, whatever the recorded
     /// state says, so that exiting works even if that state is wrong. If the
     /// window refuses, the state is left unchanged and the error returned.
+    ///
+    /// The Dock and menu bar are shown again first, so that macOS leaves
+    /// fullscreen from the options it set up itself.
     pub fn exit(
         &self,
         window: &impl WorkspaceWindow,
+        ui: &impl SystemUi,
         reason: ExitReason,
     ) -> Result<Outcome, WorkspaceError> {
-        window
-            .set_fullscreen(false)
-            .map_err(WorkspaceError::Fullscreen)?;
+        self.show_system_ui(ui);
+        if let Err(err) = window.set_fullscreen(false) {
+            self.sync_system_ui(ui); // Still in the workspace: hide it again.
+            return Err(WorkspaceError::Fullscreen(err));
+        }
 
         let mut state = self.lock();
         let changed = state.exit(reason);
@@ -121,6 +156,11 @@ impl Workspace {
     /// Brings the state in line with the window after a resize, for example
     /// when the user leaves fullscreen with the operating system's own
     /// controls. Returns an outcome only if the state changed.
+    ///
+    /// Window events arrive inside AppKit's fullscreen transition callbacks,
+    /// where changes to the Dock and menu bar are ignored, so this leaves them
+    /// alone; call [`sync_system_ui`](Self::sync_system_ui) afterwards, on a
+    /// later main-loop turn.
     pub fn reconcile(&self, window: &impl WorkspaceWindow) -> Option<Outcome> {
         if self.lock().status() == Status::Inactive {
             return None;
@@ -139,6 +179,55 @@ impl Workspace {
             log::info!("left workspace through the system fullscreen control");
         }
         changed.then(|| self.outcome(&state, true))
+    }
+
+    /// Whether [`sync_system_ui`](Self::sync_system_ui) has anything to do. False
+    /// outside the workspace once everything is undone, so ordinary window
+    /// resizes cost nothing.
+    pub fn needs_system_ui_sync(&self) -> bool {
+        self.lock().status() == Status::Active || self.ui_hidden.load(Ordering::SeqCst)
+    }
+
+    /// Brings the Dock and menu bar in line with the state: hidden while the
+    /// workspace is open, otherwise undone once fullscreen has ended.
+    /// Idempotent. Must run on the main thread, outside AppKit's fullscreen
+    /// transition callbacks.
+    pub fn sync_system_ui(&self, ui: &impl SystemUi) {
+        if self.lock().status() == Status::Active {
+            match ui.hide() {
+                Ok(true) => {
+                    if !self.ui_hidden.swap(true, Ordering::SeqCst) {
+                        log::info!("Dock and menu bar hidden for the workspace");
+                    }
+                }
+                Ok(false) => {} // macOS has not entered fullscreen yet.
+                Err(err) => log::warn!("could not hide the Dock and menu bar: {err}"),
+            }
+        } else if self.ui_hidden.load(Ordering::SeqCst) {
+            // Fullscreen was ended by the system's own controls before they
+            // could be shown.
+            match ui.clear_after_fullscreen() {
+                Ok(true) => self.ui_hidden.store(false, Ordering::SeqCst),
+                Ok(false) => {} // Still leaving fullscreen; try again later.
+                Err(err) => log::error!("could not show the Dock and menu bar again: {err}"),
+            }
+        }
+    }
+
+    /// Shows the Dock and menu bar while the window is still fullscreen, if
+    /// WHITE ROOM hid them.
+    fn show_system_ui(&self, ui: &impl SystemUi) {
+        if !self.ui_hidden.load(Ordering::SeqCst) {
+            return;
+        }
+        match ui.show() {
+            Ok(()) => {
+                self.ui_hidden.store(false, Ordering::SeqCst);
+                log::info!("Dock and menu bar shown again");
+            }
+            // Left set, so `sync_system_ui` clears it after fullscreen ends.
+            Err(err) => log::error!("could not show the Dock and menu bar again: {err}"),
+        }
     }
 
     fn outcome(&self, state: &WorkspaceState, changed: bool) -> Outcome {
@@ -226,7 +315,10 @@ mod tests {
     };
 
     use super::*;
-    use crate::workspace::display::{Rect, Size};
+    use crate::{
+        platform::presentation::SystemUiError,
+        workspace::display::{Rect, Size},
+    };
 
     fn display(name: &str, x: f64) -> Display {
         let bounds = Rect {
@@ -244,6 +336,11 @@ mod tests {
 
     /// In-memory window. By default it behaves like Windows: fullscreen
     /// changes take effect immediately.
+    ///
+    /// It also stands in for the Dock and menu bar ([`SystemUi`]), like
+    /// macOS: they can only be hidden while the window is fullscreen. Sharing
+    /// one fake lets tests check the order of window and Dock changes in
+    /// `journal`.
     struct FakeWindow {
         fullscreen: Cell<bool>,
         /// Simulates macOS deferring a request made mid-animation.
@@ -255,6 +352,9 @@ mod tests {
         current: RefCell<Option<Display>>,
         set_fullscreen_calls: RefCell<Vec<bool>>,
         moves: RefCell<Vec<(f64, f64)>>,
+        ui_hidden: Cell<bool>,
+        fail_ui: Cell<bool>,
+        journal: RefCell<Vec<&'static str>>,
     }
 
     impl FakeWindow {
@@ -270,6 +370,9 @@ mod tests {
                 primary: Some(primary),
                 set_fullscreen_calls: RefCell::default(),
                 moves: RefCell::default(),
+                ui_hidden: Cell::new(false),
+                fail_ui: Cell::new(false),
+                journal: RefCell::default(),
             }
         }
 
@@ -300,6 +403,11 @@ mod tests {
             }
             if !self.defer_fullscreen.get() {
                 self.fullscreen.set(fullscreen);
+                self.journal.borrow_mut().push(if fullscreen {
+                    "enter fullscreen"
+                } else {
+                    "leave fullscreen"
+                });
             }
             Ok(())
         }
@@ -333,6 +441,46 @@ mod tests {
         }
     }
 
+    impl SystemUi for FakeWindow {
+        fn hide(&self) -> Result<bool, SystemUiError> {
+            if self.fail_ui.get() {
+                return Err(SystemUiError::NotMainThread);
+            }
+            if self.fullscreen.get() && !self.ui_hidden.get() {
+                self.ui_hidden.set(true);
+                self.journal.borrow_mut().push("hide");
+            }
+            Ok(self.ui_hidden.get())
+        }
+
+        fn show(&self) -> Result<(), SystemUiError> {
+            if self.fail_ui.get() {
+                return Err(SystemUiError::NotMainThread);
+            }
+            if self.ui_hidden.get() && self.fullscreen.get() {
+                self.ui_hidden.set(false);
+                self.journal.borrow_mut().push("show");
+            }
+            Ok(())
+        }
+
+        fn clear_after_fullscreen(&self) -> Result<bool, SystemUiError> {
+            if self.fail_ui.get() {
+                return Err(SystemUiError::NotMainThread);
+            }
+            if self.fullscreen.get() {
+                return Ok(false);
+            }
+            self.ui_hidden.set(false);
+            self.journal.borrow_mut().push("clear after fullscreen");
+            Ok(true)
+        }
+
+        fn is_hidden(&self) -> Result<bool, SystemUiError> {
+            Ok(self.ui_hidden.get())
+        }
+    }
+
     fn workspace() -> Workspace {
         Workspace::new(EmergencyExitInfo::available())
     }
@@ -342,7 +490,7 @@ mod tests {
         let workspace = workspace();
         let window = FakeWindow::on_primary();
 
-        let outcome = workspace.enter(&window).unwrap();
+        let outcome = workspace.enter(&window, &window).unwrap();
 
         assert!(outcome.changed);
         assert!(window.fullscreen.get());
@@ -362,7 +510,7 @@ mod tests {
         let workspace = workspace();
         let window = FakeWindow::on_secondary();
 
-        let outcome = workspace.enter(&window).unwrap();
+        let outcome = workspace.enter(&window, &window).unwrap();
 
         assert_eq!(*window.moves.borrow(), vec![(360.0, 140.0)]);
         assert!(window.fullscreen.get());
@@ -377,7 +525,7 @@ mod tests {
             ..FakeWindow::on_secondary()
         };
 
-        let outcome = workspace.enter(&window).unwrap();
+        let outcome = workspace.enter(&window, &window).unwrap();
 
         assert!(window.fullscreen.get());
         assert_eq!(
@@ -398,7 +546,7 @@ mod tests {
             ..FakeWindow::on_primary()
         };
 
-        let outcome = workspace.enter(&window).unwrap();
+        let outcome = workspace.enter(&window, &window).unwrap();
 
         assert!(window.fullscreen.get());
         assert_eq!(outcome.snapshot.status, Status::Active);
@@ -411,7 +559,7 @@ mod tests {
         let window = FakeWindow::on_primary();
         window.fail_fullscreen.set(true);
 
-        let err = workspace.enter(&window).unwrap_err();
+        let err = workspace.enter(&window, &window).unwrap_err();
 
         assert!(matches!(err, WorkspaceError::Fullscreen(_)), "{err}");
         assert_eq!(workspace.snapshot().status, Status::Inactive);
@@ -422,10 +570,10 @@ mod tests {
     fn exit_leaves_fullscreen_and_records_the_reason() {
         let workspace = workspace();
         let window = FakeWindow::on_primary();
-        workspace.enter(&window).unwrap();
+        workspace.enter(&window, &window).unwrap();
 
         let outcome = workspace
-            .exit(&window, ExitReason::EmergencyShortcut)
+            .exit(&window, &window, ExitReason::EmergencyShortcut)
             .unwrap();
 
         assert!(outcome.changed);
@@ -446,7 +594,9 @@ mod tests {
         let window = FakeWindow::on_primary();
         window.fullscreen.set(true);
 
-        let outcome = workspace.exit(&window, ExitReason::ExitControl).unwrap();
+        let outcome = workspace
+            .exit(&window, &window, ExitReason::ExitControl)
+            .unwrap();
 
         assert!(!outcome.changed);
         assert_eq!(*window.set_fullscreen_calls.borrow(), vec![false]);
@@ -457,17 +607,19 @@ mod tests {
     fn failed_exit_keeps_the_workspace_open() {
         let workspace = workspace();
         let window = FakeWindow::on_primary();
-        workspace.enter(&window).unwrap();
+        workspace.enter(&window, &window).unwrap();
         window.fail_fullscreen.set(true);
 
-        assert!(workspace.exit(&window, ExitReason::ExitControl).is_err());
+        assert!(workspace
+            .exit(&window, &window, ExitReason::ExitControl)
+            .is_err());
         assert_eq!(workspace.snapshot().status, Status::Active);
 
         // The window is still fullscreen, so a later attempt can succeed.
         window.fail_fullscreen.set(false);
         assert!(
             workspace
-                .exit(&window, ExitReason::ExitControl)
+                .exit(&window, &window, ExitReason::ExitControl)
                 .unwrap()
                 .changed
         );
@@ -480,13 +632,16 @@ mod tests {
         let reasons = [ExitReason::ExitControl, ExitReason::EmergencyShortcut];
 
         for (cycle, reason) in reasons.iter().cycle().take(20).enumerate() {
-            assert!(workspace.enter(&window).unwrap().changed);
+            assert!(workspace.enter(&window, &window).unwrap().changed);
             assert!(window.fullscreen.get());
-            assert!(workspace.exit(&window, *reason).unwrap().changed);
+            assert!(window.ui_hidden.get());
+            assert!(workspace.exit(&window, &window, *reason).unwrap().changed);
             assert!(!window.fullscreen.get());
+            assert!(!window.ui_hidden.get());
             assert_eq!(workspace.snapshot().revision, (cycle as u64 + 1) * 2);
         }
         assert_eq!(workspace.snapshot().status, Status::Inactive);
+        assert!(!window.ui_hidden.get());
         assert_eq!(window.moves.borrow().len(), 1, "moved once, then stayed");
     }
 
@@ -494,7 +649,7 @@ mod tests {
     fn reconcile_detects_leaving_through_the_system() {
         let workspace = workspace();
         let window = FakeWindow::on_primary();
-        workspace.enter(&window).unwrap();
+        workspace.enter(&window, &window).unwrap();
 
         assert_eq!(workspace.reconcile(&window), None, "still fullscreen");
 
@@ -511,7 +666,7 @@ mod tests {
         let workspace = workspace();
         let window = FakeWindow::on_primary();
         window.defer_fullscreen.set(true);
-        workspace.enter(&window).unwrap();
+        workspace.enter(&window, &window).unwrap();
 
         // Resizes during the previous animation: not fullscreen yet.
         assert_eq!(workspace.reconcile(&window), None);
@@ -541,7 +696,7 @@ mod tests {
     fn exit_still_works_after_a_panic_poisoned_the_state() {
         let workspace = Arc::new(workspace());
         let window = FakeWindow::on_primary();
-        workspace.enter(&window).unwrap();
+        workspace.enter(&window, &window).unwrap();
 
         let poisoner = Arc::clone(&workspace);
         let _ = std::thread::spawn(move || {
@@ -551,7 +706,145 @@ mod tests {
         .join();
         assert!(workspace.state.is_poisoned());
 
-        let outcome = workspace.exit(&window, ExitReason::ExitControl).unwrap();
+        let outcome = workspace
+            .exit(&window, &window, ExitReason::ExitControl)
+            .unwrap();
+        assert_eq!(outcome.snapshot.status, Status::Inactive);
+        assert!(!window.fullscreen.get());
+    }
+
+    #[test]
+    fn dock_is_hidden_once_the_window_is_fullscreen() {
+        let workspace = workspace();
+        let window = FakeWindow::on_primary();
+        window.defer_fullscreen.set(true);
+        workspace.enter(&window, &window).unwrap();
+        assert!(!window.ui_hidden.get(), "not fullscreen yet");
+
+        window.fullscreen.set(true); // macOS finished entering
+        workspace.reconcile(&window);
+        assert!(!window.ui_hidden.get(), "reconcile leaves them alone");
+        workspace.sync_system_ui(&window); // the deferred call
+        assert!(window.ui_hidden.get());
+    }
+
+    #[test]
+    fn dock_is_hidden_at_once_if_the_window_was_already_fullscreen() {
+        let workspace = workspace();
+        let window = FakeWindow::on_primary();
+        window.fullscreen.set(true); // e.g. the green button, before entering
+
+        workspace.enter(&window, &window).unwrap();
+        assert!(window.ui_hidden.get());
+    }
+
+    #[test]
+    fn exit_shows_the_dock_before_leaving_fullscreen() {
+        let workspace = workspace();
+        let window = FakeWindow::on_primary();
+        workspace.enter(&window, &window).unwrap();
+        window.journal.borrow_mut().clear();
+
+        workspace
+            .exit(&window, &window, ExitReason::ExitControl)
+            .unwrap();
+
+        assert_eq!(*window.journal.borrow(), ["show", "leave fullscreen"]);
+    }
+
+    #[test]
+    fn leaving_through_the_system_clears_the_dock_afterwards() {
+        let workspace = workspace();
+        let window = FakeWindow::on_primary();
+        workspace.enter(&window, &window).unwrap();
+        assert!(window.ui_hidden.get());
+        window.journal.borrow_mut().clear();
+
+        window.fullscreen.set(false); // the green window button
+        workspace.reconcile(&window).unwrap();
+        assert!(workspace.needs_system_ui_sync());
+        workspace.sync_system_ui(&window);
+
+        assert!(!window.ui_hidden.get());
+        assert_eq!(*window.journal.borrow(), ["clear after fullscreen"]);
+        assert!(!workspace.needs_system_ui_sync());
+    }
+
+    #[test]
+    fn clearing_waits_until_fullscreen_has_ended() {
+        let workspace = workspace();
+        let window = FakeWindow::on_primary();
+        workspace.enter(&window, &window).unwrap();
+        // The state closed while macOS is still leaving fullscreen.
+        workspace.lock().observe_fullscreen(false);
+
+        workspace.sync_system_ui(&window);
+        assert!(window.ui_hidden.get(), "too early");
+        assert!(workspace.needs_system_ui_sync());
+
+        window.fullscreen.set(false);
+        workspace.sync_system_ui(&window);
+        assert!(!window.ui_hidden.get());
+    }
+
+    #[test]
+    fn exit_does_not_touch_a_dock_it_did_not_hide() {
+        let workspace = workspace();
+        let window = FakeWindow::on_primary();
+        window.defer_fullscreen.set(true);
+        workspace.enter(&window, &window).unwrap();
+        window.ui_hidden.set(true); // hidden by someone else
+
+        workspace
+            .exit(&window, &window, ExitReason::ExitControl)
+            .unwrap();
+        workspace.sync_system_ui(&window);
+
+        assert!(window.ui_hidden.get());
+        assert!(window.journal.borrow().is_empty());
+    }
+
+    #[test]
+    fn ordinary_window_resizes_need_no_dock_sync() {
+        let workspace = workspace();
+        let window = FakeWindow::on_primary();
+        assert!(!workspace.needs_system_ui_sync());
+
+        workspace.enter(&window, &window).unwrap();
+        assert!(workspace.needs_system_ui_sync());
+        workspace
+            .exit(&window, &window, ExitReason::ExitControl)
+            .unwrap();
+        assert!(!workspace.needs_system_ui_sync());
+    }
+
+    #[test]
+    fn failed_exit_keeps_the_ui_hidden() {
+        let workspace = workspace();
+        let window = FakeWindow::on_primary();
+        workspace.enter(&window, &window).unwrap();
+        window.fail_fullscreen.set(true);
+
+        assert!(workspace
+            .exit(&window, &window, ExitReason::ExitControl)
+            .is_err());
+
+        assert!(window.ui_hidden.get(), "still in the workspace");
+    }
+
+    #[test]
+    fn dock_failures_never_block_entering_or_leaving() {
+        let workspace = workspace();
+        let window = FakeWindow::on_primary();
+        window.fail_ui.set(true);
+
+        assert!(workspace.enter(&window, &window).unwrap().changed);
+        assert_eq!(workspace.reconcile(&window), None);
+        workspace.sync_system_ui(&window);
+        let outcome = workspace
+            .exit(&window, &window, ExitReason::EmergencyShortcut)
+            .unwrap();
+
         assert_eq!(outcome.snapshot.status, Status::Inactive);
         assert!(!window.fullscreen.get());
     }

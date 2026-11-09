@@ -2,7 +2,9 @@
 
 use serde::{Serialize, Serializer};
 
-use crate::{database::DatabaseError, workspace::WorkspaceError};
+use crate::{
+    database::DatabaseError, sessions::reminders::ReminderError, workspace::WorkspaceError,
+};
 
 /// Error type for all Tauri commands.
 ///
@@ -15,6 +17,13 @@ pub enum CommandError {
 
     #[error("workspace error: {0}")]
     Workspace(#[from] WorkspaceError),
+
+    /// Validation messages are written for the user and shown as they are.
+    #[error("{0}")]
+    Reminder(#[from] ReminderError),
+
+    #[error("the operation was interrupted")]
+    Interrupted(String),
 }
 
 impl Serialize for CommandError {

@@ -25,6 +25,16 @@ thiserror = "2"
 rusqlite = { version = "0.41", features = ["bundled"] }
 tauri-plugin-global-shortcut = "2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# AppKit, Foundation, and UserNotifications bindings for `platform`. Tauri
+# already builds these crates; they are listed here so platform code can call
+# them directly. Every call used is safe Rust (`unsafe` stays forbidden).
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSBundle", "NSCalendar", "NSError", "NSString"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
+objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "block2", "UNNotificationContent", "UNNotificationRequest", "UNNotificationSound", "UNNotificationTrigger", "UNUserNotificationCenter"] }
+
 [lints.rust]
 unsafe_code = "forbid"
 

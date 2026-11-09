@@ -8,6 +8,10 @@ fn main() {
             "get_workspace_state",
             "enter_workspace",
             "exit_workspace",
+            "get_reminders",
+            "set_reminders_enabled",
+            "add_reminder",
+            "remove_reminder",
         ]),
     ))
     .expect("failed to run tauri-build");

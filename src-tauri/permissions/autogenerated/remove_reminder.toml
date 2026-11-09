@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-remove-reminder"
+description = "Enables the remove_reminder command without any pre-configured scope."
+commands.allow = ["remove_reminder"]
+
+[[permission]]
+identifier = "deny-remove-reminder"
+description = "Denies the remove_reminder command without any pre-configured scope."
+commands.deny = ["remove_reminder"]

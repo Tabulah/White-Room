@@ -1,8 +1,15 @@
-//! macOS-specific functionality (presentation options, application discovery,
-//! notifications).
+//! Operating-system integration, kept behind small interfaces so the rest of
+//! the backend does not call macOS APIs directly.
 //!
-//! Platform code stays behind well-defined interfaces so the rest of the
-//! backend does not depend on macOS APIs directly.
+//! | Module             | Interface                    | macOS implementation          |
+//! |--------------------|------------------------------|-------------------------------|
+//! | [`presentation`]   | [`presentation::SystemUi`]   | the app's presentation options |
+//! | [`notifications`]  | [`notifications::NotificationScheduler`] | `UNUserNotificationCenter` |
 //!
-//! Status: planned — see ROADMAP.md Phases 2–4. Phase 1 needed no macOS-specific
-//! code beyond small `cfg` branches in `workspace`.
+//! On other platforms each interface has an implementation that does nothing
+//! and says so, so callers never assume a change was made when it was not.
+//!
+//! Application discovery arrives in Phase 4.
+
+pub mod notifications;
+pub mod presentation;

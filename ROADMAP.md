@@ -12,7 +12,7 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 | `[~]` | In progress |
 | `[x]` | Implemented and verified |
 
-**Current state:** Phase 1 (macOS fullscreen workspace) is implemented and verified on a Mac by an automated smoke test: the app enters and leaves a fullscreen workspace repeatedly and restores its window exactly each time. Still open: green CI runs with the smoke test on macOS and Windows (the first run found two problems, both now fixed; see Phase 1 notes), and a short check by hand and eye on a Mac. Phase 2 should not begin in earnest until those are done.
+**Current state:** Phase 2 (safe presentation lifecycle) is implemented and verified on a Mac by automated tests: the workspace hides the Dock and menu bar, every way out restores them, and a crash cannot leave them hidden. Study reminders were added at the user's request. Phase 1 passed CI on macOS and Windows (commit `878afdc`). Still open: CI runs of the Phase 2 changes, and short checks by hand and eye on a Mac for Phases 1 and 2 (listed in each phase's notes).
 
 ## Guiding Rules
 
@@ -67,11 +67,11 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 - Verified on macOS (Apple Silicon, 2026-11-09): Rust fmt, clippy, and tests (57); frontend format, type check, and tests (42); production frontend build; debug `.app` bundle. The smoke test passed. It entered and left the workspace 3 times, alternating the exit-control and emergency-shortcut code paths, and the window returned to its exact original frame each time. The shortcut was registered. A deliberately broken run exits with code 1, so CI will notice failures.
 - First CI run (commit `7b46a49`) failed on both platforms. Both causes are fixed:
   - macOS: the smoke test failed on the runner's 1024-point-wide display. The 1200 × 800 window was centred partly off-screen, and macOS moved it back on screen after fullscreen, so its frame changed. The same failure was reproduced locally with an oversized window. Fixed with `preventOverflow`: the window is shrunk to fit the display at launch, and the oversized case then passes all three cycles.
-  - Windows: everything compiled and passed clippy. One Phase 0 test, `unreadable_path_is_an_error`, assumed every OS reports reading a directory the same way, and failed on Windows. It now uses a realistic path. Windows' build and smoke-test steps have not run yet.
+  - Windows: everything compiled and passed clippy. One Phase 0 test, `unreadable_path_is_an_error`, assumed every OS reports reading a directory the same way, and failed on Windows. It now uses a realistic path. The next run (commit `878afdc`) passed on both platforms, including the Windows build and smoke test.
 - Still to check by hand on a Mac:
   - look at the entry screen and the workspace;
   - press ⇧⌘⎋ for real (the smoke test calls the shortcut's handler function, not the keys);
-  - leave with the green window button and check that the entry screen comes back;
+  - ~~leave with the green window button~~: since Phase 2 the button is hidden with the menu bar; see Phase 2's ⌃⌘F check;
   - with a second display, enter from it and check that the workspace opens on the primary display.
 - Decisions:
   - Native macOS fullscreen. The OS hides and restores the Dock and menu bar and nothing persists after a crash. Explicit presentation options wait for Phase 2's restore machinery.
@@ -89,17 +89,42 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 
 **Goal:** WHITE ROOM never leaves macOS in a broken or hidden state.
 
-- [ ] `platform` interface for presentation options (Dock, menu bar, notifications) isolated behind a trait.
-- [ ] Snapshot the user's existing presentation configuration before any change.
-- [ ] Persist the snapshot to disk before applying changes.
-- [ ] Restore on normal exit, window close, and app quit.
-- [ ] Restore on panic and termination signals where possible.
-- [ ] On launch, detect an unclean previous shutdown and restore from the persisted snapshot.
-- [ ] Independent recovery mechanism outside the main workspace UI (e.g. menu bar item or standalone recovery command).
-- [ ] Tests for snapshot, persist, restore, and crash-recovery paths.
-- [ ] Document what is and is not modified on macOS.
+- [x] `platform` interface for presentation options (Dock, menu bar) isolated behind a trait. Notifications have their own interface, used for study reminders; silencing them is Phase 3.
+- [x] Hide the Dock and menu bar completely while the workspace is open.
+- [x] Restore on normal exit, window close, and app quit.
+- [x] Restore on panic and termination signals: macOS drops the app's presentation options when its process ends, however it ends.
+- [x] Tests for restore and crash-recovery paths.
+- [x] Document what is and is not modified on macOS.
+- [x] Study reminders (added at the user's request): scheduled macOS notifications at chosen days and times, with a calm default text and optional label.
+- Moved to Phase 3, where the first change that outlasts the app arrives (notification silencing). Nothing in Phase 2 outlasts the app, so there is nothing for them to save or restore yet:
+  - snapshot the user's existing configuration before any change, and persist it to disk before applying changes;
+  - on launch, detect an unclean previous shutdown and restore from the persisted snapshot;
+  - an independent recovery mechanism outside the main workspace UI. For Phase 2's changes, quitting or force-quitting WHITE ROOM is that mechanism: macOS restores everything at once.
 
-**Exit criteria:** Forced quits and simulated crashes always result in restored Dock/menu bar state on next launch or via the recovery mechanism.
+**Notes:**
+
+- Behaviour is documented in [`docs/workspace.md`](docs/workspace.md) and [`docs/reminders.md`](docs/reminders.md).
+- Decisions (by the user):
+  - The Dock and menu bar are hidden through WHITE ROOM's own presentation options, not by changing system settings. macOS applies them only while WHITE ROOM is the app in front and drops them when it quits or crashes. Trade-off: switching to another app shows the Dock and menu bar for that app.
+  - Both are hidden completely. (First decided as "Dock hidden, menu bar slides in"; changed during the phase.) The green button and View › Exit Full Screen go with the menu bar; ⌃⌘F remains.
+  - Phase 2 builds only what its changes need; the snapshot, restore-on-launch, and recovery tool follow in Phase 3.
+  - Reminders: chosen days and times; text "Time to study / WHITE ROOM is ready when you are", or the user's label; off until switched on.
+- AppKit behaviour found while building this (with a standalone AppKit probe app, then confirmed in WHITE ROOM), and handled:
+  - presentation options set inside a fullscreen transition callback are silently ignored, so changes are queued for a later main-loop turn;
+  - leaving fullscreen while they are hidden leaves a changed presentation mode recorded for the app, invisible to the public API. WHITE ROOM shows them before leaving, or clears the mode after a system-initiated exit. A deliberately broken build (clean-up disabled) fails the smoke test, so the test does detect it.
+- Verified on macOS (Apple Silicon, 2026-11-09): Rust fmt, clippy, and tests (111); frontend format, type check, and tests (70); debug `.app` bundle. Smoke test passed: 3 cycles through WHITE ROOM's exits plus 1 through the system's fullscreen toggle; each time the Dock and menu bar were hidden inside and back afterwards, nothing stayed recorded, and the window returned to its exact frame. Crash test passed: `SIGKILL` inside the workspace, frontmost app back at its baseline.
+- Not verified automatically, because CI cannot click macOS's permission prompt: scheduling reminders. The code path is covered by tests against a fake scheduler; the smoke test checks that notifications can be scheduled from the app bundle.
+- Still to check by hand on a Mac:
+  - look at the workspace and the reminders screen;
+  - in the workspace, move the pointer to the top and bottom edges: neither the menu bar nor the Dock appears;
+  - leave with ⌃⌘F, and check the entry screen returns with the Dock and menu bar back;
+  - ⌘Tab to another app inside the workspace: the Dock and menu bar appear for it, and are hidden again on returning;
+  - with a second display, whether its menu bar is hidden too;
+  - turn reminders on: macOS asks once. Add one a minute or two ahead and quit WHITE ROOM: it arrives. Repeat with WHITE ROOM in front: it stays silent.
+- New direct dependencies (macOS only): `objc2`, `block2`, `objc2-foundation`, `objc2-app-kit`, `objc2-user-notifications`. Tauri already built all of them; no new crates entered `Cargo.lock`. All calls are safe Rust; `unsafe` stays forbidden.
+- Database schema 2 adds `study_reminder` and `study_reminder_settings`.
+
+**Exit criteria:** Forced quits and simulated crashes always result in restored Dock/menu bar state on next launch or via the recovery mechanism. Met immediately rather than on next launch: macOS restores them as the process ends (crash test, in CI).
 
 ---
 
@@ -111,6 +136,7 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 - [ ] Restriction provider abstraction that reports actual enforcement capabilities.
 - [ ] Personal (ordinary macOS) restriction provider.
 - [ ] Standard Mode: fullscreen workspace, launcher, optional notification suppression via supported features, easy exit.
+- [ ] Before the first change that outlasts the app (such as notification suppression): snapshot and persist what is changed, restore it on launch after an unclean shutdown, and an independent recovery mechanism (moved from Phase 2).
 - [ ] Strict Mode: reduced navigation, deliberate exit flow, configurable external link access — best effort only.
 - [ ] UI clearly communicates which restrictions are enforced vs. best effort.
 - [ ] Emergency exit remains available in every mode.
@@ -277,7 +303,8 @@ From `PROJECT-BRIEF.md`. These are not scheduled and will not be built without a
 
 - Bundle identifier. Phase 0 uses the placeholder `com.whiteroom.desktop`. Changing it later moves the data directory, so it should be settled before any release.
 - Minimum supported macOS version.
-- Exact mechanism for the independent recovery tool (menu bar agent vs. separate helper binary).
+- Exact mechanism for the independent recovery tool (menu bar agent vs. separate helper binary), needed from Phase 3.
+- Notification suppression: macOS gives apps no supported way to turn on a Focus; the likely route is a Shortcuts shortcut the user creates and WHITE ROOM runs.
 - Level curve formula and initial XP/FC award values.
 - Curriculum pack file format and versioning.
 - Multi-display behaviour in Strict Mode.

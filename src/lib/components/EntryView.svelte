@@ -13,9 +13,10 @@
     /** Set when loading the workspace state or entering it failed. */
     error: string | null;
     onenter: () => void;
+    onreminders: () => void;
   }
 
-  let { snapshot, appInfo, error, onenter }: Props = $props();
+  let { snapshot, appInfo, error, onenter, onreminders }: Props = $props();
 </script>
 
 <main
@@ -55,7 +56,21 @@
     </dd>
 
     <dt class="text-micro tracking-label text-ink-faint uppercase">Display</dt>
-    <dd class="text-ink-muted">Opens fullscreen on the primary display.</dd>
+    <dd class="text-ink-muted">
+      Opens fullscreen on the primary display. The Dock and menu bar stay hidden until you leave.
+    </dd>
+
+    <dt class="text-micro tracking-label text-ink-faint uppercase">Reminders</dt>
+    <dd>
+      <button
+        type="button"
+        class="text-ink-muted underline-offset-4 hover:text-ink hover:underline"
+        onclick={onreminders}
+        data-open-reminders
+      >
+        Study reminders…
+      </button>
+    </dd>
   </dl>
 
   {#if error}

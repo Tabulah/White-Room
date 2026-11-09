@@ -3,10 +3,11 @@
 //!
 //! Entering the workspace makes the main window fullscreen on the primary
 //! display using the operating system's own fullscreen mode. On macOS that is
-//! native fullscreen in its own Space: macOS hides and restores the Dock and
-//! menu bar itself, and nothing about the desktop is changed persistently, so
-//! even a crash cannot leave it altered. Explicit presentation options come in
-//! Phase 2, together with their snapshot and restore machinery.
+//! native fullscreen in its own Space, and WHITE ROOM also hides the Dock and
+//! the menu bar completely while the workspace is open (see
+//! [`crate::platform::presentation`]).
+//! Both are scoped to WHITE ROOM: macOS undoes them when the app quits or
+//! crashes, so nothing about the desktop is changed persistently.
 //!
 //! There are four independent ways out, so no single failure traps the user:
 //!
@@ -26,6 +27,8 @@ mod state;
 mod window;
 
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindow, Window, WindowEvent};
+
+use crate::platform::presentation::NativeSystemUi;
 
 pub use controller::{Outcome, Workspace, WorkspaceError, WorkspaceSnapshot};
 pub use emergency_exit::EmergencyExitInfo;
@@ -50,18 +53,20 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> Workspace {
     Workspace::new(emergency_exit)
 }
 
-/// Enters the workspace and notifies the frontend.
+/// Enters the workspace and notifies the frontend. Must run on the main
+/// thread, like everything that changes the Dock and menu bar.
 pub fn enter<R: Runtime>(app: &AppHandle<R>) -> Result<WorkspaceSnapshot, WorkspaceError> {
     let window = main_window(app)?;
     let workspace = app
         .try_state::<Workspace>()
         .ok_or(WorkspaceError::NotReady)?;
-    let outcome = workspace.enter(&window)?;
+    let outcome = workspace.enter(&window, &NativeSystemUi)?;
     publish(app, &outcome);
     Ok(outcome.snapshot)
 }
 
-/// Leaves the workspace and notifies the frontend.
+/// Leaves the workspace and notifies the frontend. Must run on the main
+/// thread.
 ///
 /// If the workspace state is not registered yet, the window is still taken
 /// out of fullscreen before reporting [`WorkspaceError::NotReady`]: leaving
@@ -77,7 +82,7 @@ pub fn exit<R: Runtime>(
             .map_err(WorkspaceError::Fullscreen)?;
         return Err(WorkspaceError::NotReady);
     };
-    let outcome = workspace.exit(&window, reason)?;
+    let outcome = workspace.exit(&window, &NativeSystemUi, reason)?;
     publish(app, &outcome);
     Ok(outcome.snapshot)
 }
@@ -99,6 +104,30 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     if let Some(outcome) = workspace.reconcile(&window) {
         publish(app, &outcome);
     }
+    if workspace.needs_system_ui_sync() {
+        sync_system_ui_later(app.clone());
+    }
+}
+
+/// Runs [`Workspace::sync_system_ui`] on a later turn of the main loop.
+///
+/// Window events arrive inside AppKit's fullscreen transition callbacks,
+/// where changes to the Dock and menu bar are silently ignored.
+/// `run_on_main_thread` would run the task inline when called from the main
+/// thread, so it is called from a background task instead, which queues it
+/// behind the current event.
+fn sync_system_ui_later<R: Runtime>(app: AppHandle<R>) {
+    tauri::async_runtime::spawn(async move {
+        let handle = app.clone();
+        let queued = app.run_on_main_thread(move || {
+            if let Some(workspace) = handle.try_state::<Workspace>() {
+                workspace.sync_system_ui(&NativeSystemUi);
+            }
+        });
+        if let Err(err) = queued {
+            log::warn!("could not schedule a Dock and menu bar update: {err}");
+        }
+    });
 }
 
 fn main_window<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, WorkspaceError> {
