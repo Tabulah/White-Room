@@ -49,7 +49,13 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn Error>> {
     app.manage(workspace);
 
     app.manage(Reminders::native());
-    sync_reminders_in_background(app.handle());
+    #[cfg(debug_assertions)]
+    let smoke_test = super::smoke_test::is_requested();
+    #[cfg(not(debug_assertions))]
+    let smoke_test = false;
+    if !smoke_test {
+        sync_reminders_in_background(app.handle());
+    }
 
     #[cfg(debug_assertions)]
     super::smoke_test::start_if_requested(app.handle());

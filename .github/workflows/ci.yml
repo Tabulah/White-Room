@@ -53,8 +53,18 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
-      - name: Build app bundle (unsigned)
+      - name: Build app bundle (ad-hoc signed)
         run: npm run tauri -- build --debug --bundles app
+
+      # macOS refuses notifications, without asking the user, to an app whose
+      # code signature names a different identifier than its bundle.
+      - name: Check the app is signed as itself
+        run: |
+          app="src-tauri/target/debug/bundle/macos/WHITE ROOM.app"
+          codesign --verify --strict "$app"
+          signed_as="$(codesign -dv "$app" 2>&1 | sed -n 's/^Identifier=//p')"
+          echo "signed as: $signed_as"
+          test "$signed_as" = "com.whiteroom.desktop"
 
       # Launches the built app, which migrates its database, then enters and
       # leaves the fullscreen workspace three times and checks the window is

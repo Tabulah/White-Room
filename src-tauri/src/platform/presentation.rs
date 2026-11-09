@@ -291,12 +291,18 @@ mod macos {
 
     /// Leaves fullscreen the way the green window button, View › Exit Full
     /// Screen, and ⌃⌘F do, bypassing WHITE ROOM's own exit path. Debug
-    /// builds only; the smoke test uses it. Returns `false` if no window of
-    /// this app is the key window.
+    /// builds only; the smoke test uses it. Acts on this app's fullscreen
+    /// window, whether or not it has keyboard focus; returns `false` if there
+    /// is none.
     #[cfg(debug_assertions)]
     pub fn toggle_fullscreen_like_the_system() -> Result<bool, SystemUiError> {
+        use objc2_app_kit::NSWindowStyleMask;
+
         let app = app()?;
-        Ok(match app.keyWindow() {
+        let fullscreen = app.windows().iter().find(|window| {
+            window.isVisible() && window.styleMask().contains(NSWindowStyleMask::FullScreen)
+        });
+        Ok(match fullscreen {
             Some(window) => {
                 window.toggleFullScreen(None);
                 true

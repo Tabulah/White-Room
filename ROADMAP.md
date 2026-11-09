@@ -114,6 +114,7 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
   - leaving fullscreen while they are hidden leaves a changed presentation mode recorded for the app, invisible to the public API. WHITE ROOM shows them before leaving, or clears the mode after a system-initiated exit. A deliberately broken build (clean-up disabled) fails the smoke test, so the test does detect it.
 - Verified on macOS (Apple Silicon, 2026-11-09): Rust fmt, clippy, and tests (111); frontend format, type check, and tests (70); debug `.app` bundle. Smoke test passed: 3 cycles through WHITE ROOM's exits plus 1 through the system's fullscreen toggle; each time the Dock and menu bar were hidden inside and back afterwards, nothing stayed recorded, and the window returned to its exact frame. Crash test passed: `SIGKILL` inside the workspace, frontmost app back at its baseline.
 - Not verified automatically, because CI cannot click macOS's permission prompt: scheduling reminders. The code path is covered by tests against a fake scheduler; the smoke test checks that notifications can be scheduled from the app bundle.
+- First hand check of reminders (2026-11-09) failed: macOS refused permission without a prompt, and WHITE ROOM did not appear in System Settings › Notifications. Cause, from the system log: the debug bundle was signed only by the linker, as `white_room-<hash>`, not as `com.whiteroom.desktop`, so the notification service refused it (`requestAuthorization not allowed`). Fixed by ad-hoc signing the bundle (`bundle.macOS.signingIdentity: "-"`, which also turns on the hardened runtime); CI now checks the signature. The screen also wrongly said "not allowed" and pointed to System Settings; an error from macOS is now reported as a failure. Smoke and crash tests pass with the signed bundle. The permission prompt itself still needs a hand check.
 - Still to check by hand on a Mac:
   - look at the workspace and the reminders screen;
   - in the workspace, move the pointer to the top and bottom edges: neither the menu bar nor the Dock appears;
@@ -302,6 +303,7 @@ From `PROJECT-BRIEF.md`. These are not scheduled and will not be built without a
 ## Open Questions
 
 - Bundle identifier. Phase 0 uses the placeholder `com.whiteroom.desktop`. Changing it later moves the data directory, so it should be settled before any release.
+- Code signing for release. Bundles are ad-hoc signed, which is enough on the Mac that built them (notifications need the app signed as itself) but not for distribution, which needs a Developer ID certificate and notarisation.
 - Minimum supported macOS version.
 - Exact mechanism for the independent recovery tool (menu bar agent vs. separate helper binary), needed from Phase 3.
 - Notification suppression: macOS gives apps no supported way to turn on a Focus; the likely route is a Shortcuts shortcut the user creates and WHITE ROOM runs.

@@ -35,7 +35,7 @@ Run from the repository root unless noted.
 
 ### Continuous integration
 
-- **CI** (`.github/workflows/ci.yml`) runs all of the checks above on a macOS runner, builds an unsigned debug `.app`, and runs the smoke test and the crash test against it.
+- **CI** (`.github/workflows/ci.yml`) runs all of the checks above on a macOS runner, builds an ad-hoc signed debug `.app`, checks that it is signed as `com.whiteroom.desktop`, and runs the smoke test and the crash test against it.
 - **Windows compatibility** (`.github/workflows/windows.yml`) runs the type check, frontend and Rust tests, clippy, a debug build, and the smoke test on a Windows runner. It is a separate workflow, so a Windows failure never blocks macOS work. Windows is not a supported platform; this only shows whether the code works there. It can also be started by hand from the Actions tab.
 
 ### Smoke test

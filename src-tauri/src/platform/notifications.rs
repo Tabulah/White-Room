@@ -47,6 +47,14 @@ pub enum NotificationError {
 
     #[error("macOS keeps at most {MAX_PENDING} notifications per app; asked for {0}")]
     TooMany(usize),
+
+    /// An error instead of an answer, without asking the user. Seen when the
+    /// app bundle is not code-signed as its own bundle identifier.
+    #[error(
+        "macOS returned an error instead of asking for permission. WHITE ROOM must be \
+         code-signed as itself; the system log names the cause"
+    )]
+    PermissionRequestRejected,
 }
 
 /// Schedules notifications with the operating system.
@@ -134,17 +142,22 @@ mod macos {
         fn request_permission(&self) -> Result<bool, NotificationError> {
             let center = self.center()?;
             let (tx, rx) = mpsc::channel();
-            // Called once, on a background queue. Only whether an error was
-            // reported is needed; macOS also answers `false` in that case.
-            let done = RcBlock::new(move |granted: Bool, _error: *mut NSError| {
-                let _ = tx.send(granted.as_bool());
+            // Called once, on a background queue. The error itself cannot
+            // be read without `unsafe`; whether there was one is enough to
+            // tell a refusal by macOS from the user's answer.
+            let done = RcBlock::new(move |granted: Bool, error: *mut NSError| {
+                let _ = tx.send((granted.as_bool(), !error.is_null()));
             });
             center.requestAuthorizationWithOptions_completionHandler(
                 UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound,
                 &done,
             );
-            rx.recv_timeout(PERMISSION_TIMEOUT)
-                .map_err(|_| NotificationError::NoAnswer(PERMISSION_TIMEOUT))
+            match rx.recv_timeout(PERMISSION_TIMEOUT) {
+                Ok((true, _)) => Ok(true),
+                Ok((false, true)) => Err(NotificationError::PermissionRequestRejected),
+                Ok((false, false)) => Ok(false),
+                Err(_) => Err(NotificationError::NoAnswer(PERMISSION_TIMEOUT)),
+            }
         }
 
         fn replace_all(

@@ -88,12 +88,25 @@ enum Mode {
     Hold,
 }
 
+fn requested_mode() -> Option<Mode> {
+    match std::env::var(ENV_VAR).as_deref() {
+        Ok("1") => Some(Mode::Cycles),
+        Ok("hold") => Some(Mode::Hold),
+        _ => None,
+    }
+}
+
+/// Whether this run is a smoke test. It uses the normal data directory, so
+/// startup skips work that would act on the user's data, such as scheduling
+/// their reminders (which could show the permission prompt).
+pub fn is_requested() -> bool {
+    requested_mode().is_some()
+}
+
 /// Starts the smoke test on a background thread if [`ENV_VAR`] is set.
 pub fn start_if_requested<R: Runtime>(app: &AppHandle<R>) {
-    let mode = match std::env::var(ENV_VAR).as_deref() {
-        Ok("1") => Mode::Cycles,
-        Ok("hold") => Mode::Hold,
-        _ => return,
+    let Some(mode) = requested_mode() else {
+        return;
     };
     println!("[smoke] starting on {} ({mode:?})", std::env::consts::OS);
     let app = app.clone();
@@ -178,7 +191,7 @@ fn system_exit_cycle<R: Runtime>(
         is_fullscreen_workspace(app, window)
     })?;
     if !on_main(app, |_| presentation::toggle_fullscreen_like_the_system())?.map_err(text)? {
-        return Err("system cycle: WHITE ROOM has no key window".into());
+        return Err("system cycle: WHITE ROOM has no fullscreen window".into());
     }
     wait_until("system cycle: window restored", || {
         let last_exit = app.state::<Workspace>().snapshot().last_exit;

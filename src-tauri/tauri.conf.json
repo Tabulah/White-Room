@@ -29,6 +29,9 @@
     "active": true,
     "targets": ["app", "dmg"],
     "category": "Education",
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "shortDescription": "A local-first learning and focus environment",
     "icon": [
       "icons/32x32.png",
