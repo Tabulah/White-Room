@@ -29,5 +29,8 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    // Vitest blanks CSS imports by default; the design-token tests read this
+    // file's source (`tokens.css?raw`).
+    css: { include: [/\/src\/lib\/design\/tokens\.css/] },
   },
 });

@@ -23,6 +23,7 @@ thiserror = "2"
 # Bundled SQLite gives a known, modern SQLite version (STRICT tables etc.)
 # independent of the version shipped with macOS.
 rusqlite = { version = "0.41", features = ["bundled"] }
+tauri-plugin-global-shortcut = "2"
 
 [lints.rust]
 unsafe_code = "forbid"

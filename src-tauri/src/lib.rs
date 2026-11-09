@@ -9,7 +9,7 @@
 //! |------------------|-----------------------------------------------------------|
 //! | [`core`]         | Lifecycle, configuration, logging, shared errors          |
 //! | [`platform`]     | macOS-specific integration                                |
-//! | [`workspace`]    | Desktop presentation and application launcher             |
+//! | [`workspace`]    | Fullscreen workspace, its exits, and (later) the launcher |
 //! | [`sessions`]     | Focus sessions and their lifecycle                        |
 //! | [`learning`]     | Curricula, courses, lessons, assessments, mastery         |
 //! | [`gamification`] | XP, levels, achievements, skill trees                     |
@@ -30,11 +30,18 @@ pub mod workspace;
 pub fn run() {
     tauri::Builder::default()
         .plugin(core::logging::plugin())
+        .plugin(workspace::emergency_exit::plugin())
         .setup(|app| {
             core::lifecycle::initialize(app)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::get_app_info])
+        .on_window_event(workspace::on_window_event)
+        .invoke_handler(tauri::generate_handler![
+            commands::get_app_info,
+            commands::get_workspace_state,
+            commands::enter_workspace,
+            commands::exit_workspace,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running WHITE ROOM");
 }

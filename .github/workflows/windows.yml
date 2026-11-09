@@ -1,0 +1,82 @@
+name: Windows compatibility
+
+# WHITE ROOM targets macOS; Windows is not a supported platform. This workflow
+# checks whether the same code also builds, passes its tests, and runs on
+# Windows. It is kept separate from CI so its result never blocks macOS work.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Build, test, and smoke test (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # Formatting is platform-independent and checked by CI on macOS.
+
+      - name: Frontend type check
+        run: npm run check
+
+      - name: Frontend tests
+        run: npm test
+
+      - name: Rust lint
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Build app (unsigned, no installer)
+        run: npm run tauri -- build --debug --no-bundle
+
+      # Launches the built app, which migrates its database, then enters and
+      # leaves the fullscreen workspace three times and checks the window is
+      # restored each time (src-tauri/src/core/smoke_test.rs).
+      - name: Smoke test (launch, enter and leave the workspace)
+        timeout-minutes: 5
+        env:
+          WHITE_ROOM_SMOKE_TEST: '1'
+        run: ./src-tauri/target/debug/white-room.exe
+
+      - name: Collect app log
+        if: failure()
+        run: cp -R "$LOCALAPPDATA/com.whiteroom.desktop/logs" app-log || true
+
+      - name: Upload app log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-app-log
+          path: app-log/
+          if-no-files-found: ignore

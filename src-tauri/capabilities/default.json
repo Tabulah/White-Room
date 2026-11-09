@@ -1,7 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the main window. Deny-by-default: grant each permission only when a feature needs it, and document why.",
+  "description": "Permissions for the main window. Deny-by-default: grant each permission only when a feature needs it, and document why. allow-get-app-info: version and schema on screen. allow-get-workspace-state, allow-enter-workspace, allow-exit-workspace: the fullscreen workspace and its exit control. core:event:allow-listen, core:event:allow-unlisten: receive workspace://changed when the workspace is left by the emergency shortcut or the system fullscreen control. The global-shortcut plugin is used from Rust only; none of its permissions are granted.",
   "windows": ["main"],
-  "permissions": ["allow-get-app-info"]
+  "permissions": [
+    "allow-get-app-info",
+    "allow-get-workspace-state",
+    "allow-enter-workspace",
+    "allow-exit-workspace",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
 }

@@ -8,7 +8,8 @@ use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
 use super::config::LogLevel;
 
-const LOG_FILE_NAME: &str = "white-room";
+/// Base name of the log file; the plugin appends `.log`.
+pub const LOG_FILE_NAME: &str = "white-room";
 const MAX_LOG_FILE_BYTES: u128 = 5 * 1024 * 1024;
 const KEPT_LOG_FILES: usize = 5;
 

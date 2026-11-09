@@ -5,10 +5,14 @@ use std::error::Error;
 use tauri::{App, Manager};
 
 use super::{config, logging};
-use crate::database::{Database, DATABASE_FILE_NAME};
+use crate::{
+    database::{Database, DATABASE_FILE_NAME},
+    workspace,
+};
 
-/// Loads configuration, opens and migrates the database, and registers
-/// managed state. Runs once from the Tauri `setup` hook.
+/// Loads configuration, opens and migrates the database, registers the
+/// emergency-exit shortcut, and registers managed state. Runs once from the
+/// Tauri `setup` hook.
 pub fn initialize(app: &mut App) -> Result<(), Box<dyn Error>> {
     let paths = app.path();
 
@@ -38,5 +42,12 @@ pub fn initialize(app: &mut App) -> Result<(), Box<dyn Error>> {
     );
 
     app.manage(database);
+
+    let workspace = workspace::init(app.handle());
+    app.manage(workspace);
+
+    #[cfg(debug_assertions)]
+    super::smoke_test::start_if_requested(app.handle());
+
     Ok(())
 }

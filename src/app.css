@@ -1,15 +1,20 @@
 @import 'tailwindcss';
-
-/*
- * Phase 0 keeps styling to Tailwind's neutral palette.
- * The monochromatic design tokens are defined in Phase 1 (see ROADMAP.md).
- */
+@import './lib/design/tokens.css';
 
 html,
 body {
-  @apply h-full bg-neutral-50 text-neutral-900 antialiased;
+  @apply h-full bg-surface font-sans text-body text-ink antialiased;
 }
 
 #app {
   @apply h-full;
+}
+
+::selection {
+  @apply bg-ink text-ink-inverse;
+}
+
+/* One consistent, clearly visible keyboard focus indicator. */
+:focus-visible {
+  @apply outline-2 outline-offset-2 outline-focus;
 }

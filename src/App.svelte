@@ -1,24 +1,70 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { getAppInfo } from './lib/api/app';
+  import {
+    enterWorkspace,
+    exitWorkspace,
+    getWorkspaceState,
+    newerSnapshot,
+    onWorkspaceChanged,
+    type WorkspaceSnapshot,
+  } from './lib/api/workspace';
+  import EntryView from './lib/components/EntryView.svelte';
+  import WorkspaceView from './lib/components/WorkspaceView.svelte';
 
   const appInfo = getAppInfo();
+
+  // Rust owns the workspace state; this is only the latest copy of it.
+  let snapshot = $state<WorkspaceSnapshot | null>(null);
+  let entryError = $state<string | null>(null);
+  let exitError = $state<string | null>(null);
+
+  function apply(next: WorkspaceSnapshot) {
+    snapshot = newerSnapshot(snapshot, next);
+    if (next.status === 'active') entryError = null;
+    if (next.status === 'inactive') exitError = null;
+  }
+
+  onMount(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    // Subscribe before reading so that no change can fall between the two;
+    // revisions sort out the order in which they arrive.
+    onWorkspaceChanged(apply)
+      .then((stop) => (disposed ? stop() : (unlisten = stop)))
+      .catch((err) => console.error('workspace events unavailable', err));
+    getWorkspaceState()
+      .then(apply)
+      .catch((err) => (entryError = `Workspace unavailable: ${String(err)}`));
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  });
+
+  async function enter() {
+    entryError = null;
+    try {
+      apply(await enterWorkspace());
+    } catch (err) {
+      entryError = `Could not enter the workspace: ${String(err)}`;
+    }
+  }
+
+  async function exit() {
+    exitError = null;
+    try {
+      apply(await exitWorkspace());
+    } catch (err) {
+      exitError = String(err);
+    }
+  }
 </script>
 
-<main class="flex h-full flex-col items-center justify-center gap-6 select-none">
-  <h1 class="text-sm font-medium tracking-[0.4em] text-neutral-900">WHITE ROOM</h1>
-
-  {#await appInfo}
-    <p class="text-xs tracking-widest text-neutral-400">INITIALIZING</p>
-  {:then info}
-    <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-neutral-500">
-      <dt class="text-right tracking-widest">VERSION</dt>
-      <dd class="font-mono">{info.version}</dd>
-      <dt class="text-right tracking-widest">SCHEMA</dt>
-      <dd class="font-mono">{info.schemaVersion}</dd>
-    </dl>
-  {:catch error}
-    <p class="max-w-md text-center text-xs text-neutral-500" role="alert">
-      Backend unavailable: {String(error)}
-    </p>
-  {/await}
-</main>
+{#if snapshot?.status === 'active'}
+  <WorkspaceView {snapshot} {exitError} onexit={exit} />
+{:else}
+  <EntryView {snapshot} {appInfo} error={entryError} onenter={enter} />
+{/if}

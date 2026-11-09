@@ -7,7 +7,11 @@
 use serde::Serialize;
 use tauri::{AppHandle, Runtime, State};
 
-use crate::{core::error::CommandError, database::Database};
+use crate::{
+    core::error::CommandError,
+    database::Database,
+    workspace::{self, ExitReason, Workspace, WorkspaceSnapshot},
+};
 
 /// Basic information about the running application.
 #[derive(Debug, Clone, Serialize)]
@@ -29,4 +33,26 @@ pub async fn get_app_info<R: Runtime>(
         version: package.version.to_string(),
         schema_version: database.schema_version()?,
     })
+}
+
+// Workspace commands are deliberately synchronous: Tauri runs non-async
+// commands on the main thread, which serialises them with window events and
+// the emergency shortcut (both also handled on the main thread).
+
+#[tauri::command]
+pub fn get_workspace_state(workspace: State<'_, Workspace>) -> WorkspaceSnapshot {
+    #[cfg(debug_assertions)]
+    crate::core::smoke_test::note_frontend_connected();
+    workspace.snapshot()
+}
+
+#[tauri::command]
+pub fn enter_workspace<R: Runtime>(app: AppHandle<R>) -> Result<WorkspaceSnapshot, CommandError> {
+    Ok(workspace::enter(&app)?)
+}
+
+/// Called by the on-screen exit control.
+#[tauri::command]
+pub fn exit_workspace<R: Runtime>(app: AppHandle<R>) -> Result<WorkspaceSnapshot, CommandError> {
+    Ok(workspace::exit(&app, ExitReason::ExitControl)?)
 }

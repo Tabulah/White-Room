@@ -12,7 +12,7 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 | `[~]` | In progress |
 | `[x]` | Implemented and verified |
 
-**Current state:** Phase 0 (project foundation) is in progress. The Tauri 2 / Svelte / Rust skeleton builds, opens a window, loads configuration, logs to a local file, and opens and migrates its SQLite database. There are no user-facing features yet. All Phase 0 checks pass on macOS CI. The one remaining exit criterion is launching the app by hand on a Mac (see Phase 0 notes).
+**Current state:** Phase 1 (macOS fullscreen workspace) is implemented and verified on a Mac by an automated smoke test: the app enters and leaves a fullscreen workspace repeatedly and restores its window exactly each time. Still open: the first CI runs that include the smoke test (macOS, and the new Windows compatibility workflow), which run once these changes are pushed, and a short check by hand and eye on a Mac (see Phase 1 notes). Phase 2 should not begin in earnest until those are done.
 
 ## Guiding Rules
 
@@ -44,7 +44,7 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 
 - Verified on Linux: frontend format, type check, tests, and build; Rust fmt, clippy, and tests (19); the app launches, migrates a new database, writes its log file, and shows data fetched from Rust. Removing the capability grant makes the same call fail, which confirms commands are deny-by-default.
 - Verified on macOS CI (Apple Silicon runner, first run green): frontend format, type check, and tests; Rust fmt, clippy, and tests (19 of 19); an unsigned debug `WHITE ROOM.app` bundle is built.
-- Still to check by hand on a Mac: CI builds the app but does not launch it. Launching it, checking that the database and log appear under `~/Library`, and confirming the window shows the version and schema closes the "launches on macOS" exit criterion.
+- Launched on a Mac (2026-11-09) through the Phase 1 smoke test: the database and log are under `~/Library`, and the frontend loads and reaches the backend. CI now launches the app too. Still to confirm by eye: the entry window shows the version and schema.
 - The initial schema contains only migration bookkeeping and an `app_metadata` table that records when the database was created.
 
 **Exit criteria:** App builds and launches on macOS; migrations run on a fresh database; CI is green.
@@ -55,11 +55,29 @@ It follows the development priorities in `AGENTS.md` §12 and the deployment pri
 
 **Goal:** A calm fullscreen workspace that can be entered and left reliably.
 
-- [ ] Fullscreen workspace window with minimal dashboard placeholder.
-- [ ] Monochromatic design tokens (spacing, typography, greyscale palette) in Tailwind.
-- [ ] Always-visible, always-functional exit control.
-- [ ] Global emergency-exit keyboard shortcut.
-- [ ] Multi-display behaviour defined and documented (primary display first).
+- [x] Fullscreen workspace window with minimal dashboard placeholder.
+- [x] Monochromatic design tokens (spacing, typography, greyscale palette) in Tailwind.
+- [x] Always-visible, always-functional exit control.
+- [x] Global emergency-exit keyboard shortcut.
+- [x] Multi-display behaviour defined and documented (primary display first).
+
+**Notes:**
+
+- Behaviour, exits, and display policy are documented in [`docs/workspace.md`](docs/workspace.md).
+- Verified on macOS (Apple Silicon, 2026-11-09): Rust fmt, clippy, and tests (57); frontend format, type check, and tests (42); production frontend build; debug `.app` bundle. The smoke test passed. It entered and left the workspace 3 times, alternating the exit-control and emergency-shortcut code paths, and the window returned to its exact original frame each time. The shortcut was registered. A deliberately broken run exits with code 1, so CI will notice failures.
+- Not yet run: the smoke test step in macOS CI, and the Windows compatibility workflow. Both run on the next push.
+- Still to check by hand on a Mac:
+  - look at the entry screen and the workspace;
+  - press ⇧⌘⎋ for real (the smoke test calls the shortcut's handler function, not the keys);
+  - leave with the green window button and check that the entry screen comes back;
+  - with a second display, enter from it and check that the workspace opens on the primary display.
+- Decisions:
+  - Native macOS fullscreen. The OS hides and restores the Dock and menu bar and nothing persists after a crash. Explicit presentation options wait for Phase 2's restore machinery.
+  - The app opens in a window with an **Enter workspace** button, so entering and leaving can be repeated without restarting.
+  - The exit control is bottom-right. In macOS fullscreen the menu bar slides over the top edge.
+  - The emergency shortcut leaves the workspace; it does not quit the app. It is registered for the app's lifetime.
+- New dependency: `tauri-plugin-global-shortcut` (official Tauri plugin), used from Rust only. The frontend is granted none of its permissions. Writing our own OS hotkey code would need `unsafe`, which the crate forbids.
+- Windows compatibility check: added at the user's request. Windows is still not a supported target (see Long-Term Vision); the workflow only shows whether the code builds and runs there. This needed `icons/icon.ico` and a `.gitattributes` that keeps LF line endings.
 
 **Exit criteria:** User can enter and exit the workspace repeatedly without leaving the desktop in an altered state.
 
@@ -261,3 +279,5 @@ From `PROJECT-BRIEF.md`. These are not scheduled and will not be built without a
 - Level curve formula and initial XP/FC award values.
 - Curriculum pack file format and versioning.
 - Multi-display behaviour in Strict Mode.
+- Emergency shortcut: confirm ⇧⌘⎋ (Shift-Command-Escape), and whether it should only leave the workspace (current behaviour) or also quit the app.
+- Whether to let users choose the workspace display, or span several.

@@ -2,7 +2,7 @@
 
 use serde::{Serialize, Serializer};
 
-use crate::database::DatabaseError;
+use crate::{database::DatabaseError, workspace::WorkspaceError};
 
 /// Error type for all Tauri commands.
 ///
@@ -12,6 +12,9 @@ use crate::database::DatabaseError;
 pub enum CommandError {
     #[error("database error")]
     Database(#[from] DatabaseError),
+
+    #[error("workspace error: {0}")]
+    Workspace(#[from] WorkspaceError),
 }
 
 impl Serialize for CommandError {

@@ -55,3 +55,24 @@ jobs:
 
       - name: Build app bundle (unsigned)
         run: npm run tauri -- build --debug --bundles app
+
+      # Launches the built app, which migrates its database, then enters and
+      # leaves the fullscreen workspace three times and checks the window is
+      # restored each time (src-tauri/src/core/smoke_test.rs).
+      - name: Smoke test (launch, enter and leave the workspace)
+        timeout-minutes: 5
+        env:
+          WHITE_ROOM_SMOKE_TEST: '1'
+        run: '"src-tauri/target/debug/bundle/macos/WHITE ROOM.app/Contents/MacOS/white-room"'
+
+      - name: Collect app log
+        if: failure()
+        run: cp -R ~/Library/Logs/com.whiteroom.desktop app-log || true
+
+      - name: Upload app log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app-log
+          path: app-log/
+          if-no-files-found: ignore

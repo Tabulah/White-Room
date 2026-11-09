@@ -22,6 +22,11 @@ pub const DATABASE_FILE_NAME: &str = "white-room.sqlite3";
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The schema version this build migrates databases to.
+pub fn latest_schema_version() -> u32 {
+    migrations::MIGRATIONS.len() as u32
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum DatabaseError {
     #[error("could not create database directory {path}: {source}")]
@@ -105,10 +110,7 @@ mod tests {
     #[test]
     fn in_memory_database_is_migrated_to_latest() {
         let db = Database::open_in_memory().unwrap();
-        assert_eq!(
-            db.schema_version().unwrap(),
-            migrations::MIGRATIONS.len() as u32
-        );
+        assert_eq!(db.schema_version().unwrap(), latest_schema_version());
     }
 
     #[test]

@@ -7,3 +7,5 @@ pub mod config;
 pub mod error;
 pub mod lifecycle;
 pub mod logging;
+#[cfg(debug_assertions)]
+pub mod smoke_test;
